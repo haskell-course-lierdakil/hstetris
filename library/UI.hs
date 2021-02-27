@@ -38,10 +38,10 @@ ui = do
     | otherwise
     = rectangleWire 250 500
     <> drawField gsField
-    <> drawFalling gsGridPos gsFallingTetra
+    <> drawFalling gsGridPos gsFallingTetro
     <> (translate (-250*1.5) 200 . scale 0.2 0.2 $ drawTopScore gsScoreTable)
     <> (translate (-250*1.5) 250 . scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
-    <> drawFalling (GridPos 14 1) gsNextTetra
+    <> drawFalling (GridPos 14 1) gsNextTetro
     <> translate 280 175 (translate -10 80 (scale 0.2 0.2 (text "Next")) <> rectangleWire 150 150)
   drawField field = fold $ mapWithIndex (go 0 0) field
   drawTopScore = foldMap (uncurry formatScoreLine) . zip [0..] . take 10
@@ -57,7 +57,7 @@ ui = do
         c2c i j, c2c i (j+1), c2c (i+1) (j+1), c2c (i+1) j
         ]
     | otherwise = blank
-  drawFalling GridPos{..} tetra = fold $ mapWithIndex (go gpX gpY) tetra
+  drawFalling GridPos{..} = fold . mapWithIndex (go gpX gpY)
   control (EventKey k Down _ _) w
     | gsFinished w
     = case k of
@@ -82,7 +82,7 @@ ui = do
     $ w
   control _ w = pure w
 
-tetColor :: Tetramino -> Color
+tetColor :: Tetromino -> Color
 tetColor I = black
 tetColor O = red
 tetColor J = violet

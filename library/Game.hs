@@ -20,24 +20,24 @@ tetHeight = 4
 tetWidth = 4
 tetSize = tetHeight*tetWidth
 
-data Tetramino = I | O | J | L | T | S | Z deriving (Show, Enum, Bounded, Eq)
+data Tetromino = I | O | J | L | T | S | Z deriving (Show, Enum, Bounded, Eq)
 
-instance Uniform Tetramino where
+instance Uniform Tetromino where
   -- uniformM :: StatefulGen g m => g -> m aSource
-  uniformM g = toEnum <$> uniformRM (fromEnum (minBound :: Tetramino), fromEnum (maxBound :: Tetramino)) g
+  uniformM g = toEnum <$> uniformRM (fromEnum (minBound :: Tetromino), fromEnum (maxBound :: Tetromino)) g
 
 newtype FieldG a = Field { unField :: Vector a }
   deriving (Show, Functor, Applicative, Monad, Traversable, Foldable)
-type Field = FieldG (Maybe Tetramino)
-newtype TetraminoGridG a = TetraminoGrid { unTet :: Vector a }
+type Field = FieldG (Maybe Tetromino)
+newtype TetrominoGridG a = TetrominoGrid { unTet :: Vector a }
   deriving (Show, Functor, Applicative, Monad, Traversable, Foldable)
-type TetraminoGrid = TetraminoGridG (Maybe Tetramino)
+type TetrominoGrid = TetrominoGridG (Maybe Tetromino)
 data GridPos = GridPos { gpX :: Int, gpY :: Int } deriving (Show)
 data GameState = GameState {
     gsGridPos :: !GridPos
   , gsField :: !Field
-  , gsFallingTetra :: !TetraminoGrid
-  , gsNextTetra :: !TetraminoGrid
+  , gsFallingTetro :: !TetrominoGrid
+  , gsNextTetro :: !TetrominoGrid
   , gsScore :: !Word
   , gsStdGen :: !StdGen
   , gsFinished :: !Bool
@@ -63,14 +63,14 @@ instance Index2D FieldG where
   vec = unField
   con = Field
 
-instance Index2D TetraminoGridG where
+instance Index2D TetrominoGridG where
   width _ = tetWidth
   vec = unTet
-  con = TetraminoGrid
+  con = TetrominoGrid
 
 
-stencil :: Tetramino -> TetraminoGrid
-stencil t = TetraminoGrid . V.fromList $ go t
+stencil :: Tetromino -> TetrominoGrid
+stencil t = TetrominoGrid . V.fromList $ go t
   where
   o = Nothing
   w = Just t
@@ -117,7 +117,7 @@ stencil t = TetraminoGrid . V.fromList $ go t
     , o, w, o, o
     ]
 
-nextStencil :: StdGen -> (TetraminoGrid, StdGen)
+nextStencil :: StdGen -> (TetrominoGrid, StdGen)
 nextStencil g =
   let (a, (b, g')) = uniformR (0,3) <$> uniform g
   in (foldr ($) (stencil a) (replicate b rotTet), g')
@@ -126,8 +126,8 @@ initState :: StdGen -> GameState
 initState g = GameState {
     gsGridPos = GridPos 3 startRow
   , gsField = Field $ V.replicate fieldSize Nothing
-  , gsFallingTetra = cur
-  , gsNextTetra = next
+  , gsFallingTetro = cur
+  , gsNextTetro = next
   , gsScore = 0
   , gsStdGen = g'
   , gsFinished = False
@@ -153,26 +153,26 @@ realGameStep curState@GameState{..}
       gsField = Field . removeLine . unField $ gsField
     , gsScore = gsScore + 100
     }
-  | canPlace (0, 1) curState gsFallingTetra
+  | canPlace (0, 1) curState gsFallingTetro
   = curState{gsGridPos = gsGridPos{gpY = gpY gsGridPos + 1 }}
-  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetra
+  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetro
   = curState{gsFinished = True}
   | otherwise
   = curState{
       gsGridPos = GridPos 3 startRow
-    , gsNextTetra = nextTetra
-    , gsFallingTetra = gsNextTetra
+    , gsNextTetro = nextTetro
+    , gsFallingTetro = gsNextTetro
     , gsField = Field $ unField gsField V.// placeTet
     , gsStdGen = nextStdGen
     }
   where
-  (nextTetra, nextStdGen) = nextStencil gsStdGen
-  placeTet = [(j*fieldWidth + i, gsFallingTetra ! (l, k))
+  (nextTetro, nextStdGen) = nextStencil gsStdGen
+  placeTet = [(j*fieldWidth + i, gsFallingTetro ! (l, k))
     | k <- [0..3]
     , let i = gpX gsGridPos + k
     , l <- [0..3]
     , let j = max 0 (gpY gsGridPos) + l
-    , isJust $ gsFallingTetra ! (l, k)
+    , isJust $ gsFallingTetro ! (l, k)
     ]
   firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
                                          , all isJust $ row gsField r
@@ -184,26 +184,26 @@ realGameStep curState@GameState{..}
 
 moveLeft, moveRight, rotate :: GameState -> GameState
 moveLeft curState@GameState{gsGridPos=gp@GridPos{..}, ..}
-  | canPlace (-1, 0) curState gsFallingTetra
+  | canPlace (-1, 0) curState gsFallingTetro
   = curState{gsGridPos=gp{gpX=gpX-1}}
   | otherwise = curState
 moveRight curState@GameState{gsGridPos=gp@GridPos{..}, ..}
-  | canPlace (1, 0) curState gsFallingTetra
+  | canPlace (1, 0) curState gsFallingTetro
   = curState{gsGridPos=gp{gpX=gpX+1}}
   | otherwise = curState
 
-rotate curState@GameState{gsFallingTetra=tet}
+rotate curState@GameState{gsFallingTetro=tet}
   | canPlace (0, 0) curState rot
-  = curState{gsFallingTetra=rot}
+  = curState{gsFallingTetro=rot}
   | otherwise = curState
   where rot = rotTet tet
 
-rotTet :: TetraminoGrid -> TetraminoGrid
-rotTet tet = TetraminoGrid $ V.generate tetSize $ \ix ->
+rotTet :: TetrominoGrid -> TetrominoGrid
+rotTet tet = TetrominoGrid $ V.generate tetSize $ \ix ->
        let (i,j) = quotRem ix tetWidth
        in unTet tet V.! ((tetHeight-1-j)*tetWidth + i)
 
-canPlace :: (Int, Int) -> GameState -> TetraminoGrid -> Bool
+canPlace :: (Int, Int) -> GameState -> TetrominoGrid -> Bool
 canPlace (dx, dy) GameState{..} tet = and
   [ j >= 0 && j < 20 && i >= 0 && i < 10 && isNothing (gsField ! (j, i))
   | k <- [0..3]

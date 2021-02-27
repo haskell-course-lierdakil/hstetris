@@ -6,7 +6,7 @@ module Game where
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Maybe
-import System.Random (uniform, StdGen)
+import System.Random (uniform, uniformR, StdGen)
 import System.Random.Stateful (Uniform(..), uniformRM)
 
 fieldHeight, fieldWidth, fieldSize :: Int
@@ -116,22 +116,26 @@ stencil t = TetraminoGrid . V.fromList $ go t
     , o, w, o, o
     ]
 
+nextStencil :: StdGen -> (TetraminoGrid, StdGen)
+nextStencil g =
+  let (a, (b, g')) = uniformR (0,3) <$> uniform g
+  in (foldr ($) (stencil a) (replicate b rotTet), g')
+
 initState :: StdGen -> GameState
 initState g = GameState {
     gsGridPos = GridPos 3 (-4)
   , gsField = Field $ V.replicate fieldSize Nothing
-  , gsFallingTetra = stencil cur
-  , gsNextTetra = stencil next
+  , gsFallingTetra = cur
+  , gsNextTetra = next
   , gsScore = 0
-  , gsStdGen = g''
+  , gsStdGen = g'
   , gsFinished = False
   , gsPlayerName = ""
   , gsScoreTable = []
   , gsTotalDelay = 0
   }
   where
-  (cur, g') = uniform g
-  (next, g'') = uniform g'
+  (next, (cur, g')) = nextStencil <$> nextStencil g
 
 gameStep :: Float -> GameState -> GameState
 gameStep delay curState@GameState{..}
@@ -161,8 +165,7 @@ realGameStep curState@GameState{..}
     , gsStdGen = nextStdGen
     }
   where
-  (tetra, nextStdGen) = uniform gsStdGen
-  nextTetra = stencil tetra
+  (nextTetra, nextStdGen) = nextStencil gsStdGen
   placeTet = [(j*fieldWidth + i, gsFallingTetra ! (l, k))
     | k <- [0..3]
     , let i = gpX gsGridPos + k
@@ -192,10 +195,12 @@ rotate curState@GameState{gsFallingTetra=tet}
   | canPlace (0, 0) curState rot
   = curState{gsFallingTetra=rot}
   | otherwise = curState
-  where
-  rot = TetraminoGrid $ V.generate tetSize $ \ix ->
-         let (i,j) = quotRem ix tetWidth
-         in unTet tet V.! ((tetHeight-1-j)*tetWidth + i)
+  where rot = rotTet tet
+
+rotTet :: TetraminoGrid -> TetraminoGrid
+rotTet tet = TetraminoGrid $ V.generate tetSize $ \ix ->
+       let (i,j) = quotRem ix tetWidth
+       in unTet tet V.! ((tetHeight-1-j)*tetWidth + i)
 
 canPlace :: (Int, Int) -> GameState -> TetraminoGrid -> Bool
 canPlace (dx, dy) GameState{..} tet = and

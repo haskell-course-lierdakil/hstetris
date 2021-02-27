@@ -26,10 +26,10 @@ ui :: IO ()
 ui = do
     stdGen <- newStdGen
     score <- loadScore
-    playIO d white 5 (initState stdGen){gsScoreTable=score} (pure . draw) control (\x -> pure . advance x)
+    playIO d white 60 (initState stdGen){gsScoreTable=score} (pure . draw) control (\x -> pure . advance x)
   where
   d = InWindow "Tetris" (800, 600) (0, 0)
-  advance _ = gameStep
+  advance = gameStep
   draw GameState{..}
     | gsFinished
     = translate -200 100 (scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
@@ -74,6 +74,7 @@ ui = do
   control (EventKey k Down _ _) w = pure $ case k of
       SpecialKey KeyLeft   -> moveLeft
       SpecialKey KeyRight  -> moveRight
+      SpecialKey KeyDown   -> slamDown
       SpecialKey KeyUp     -> Game.rotate
       SpecialKey KeyEsc    -> stopGame
       _ -> id

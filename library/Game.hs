@@ -5,9 +5,8 @@ module Game where
 
 import Data.Vector (Vector)
 import qualified Data.Vector as V
-import Data.Word
 import Data.Maybe
-import System.Random (uniform, StdGen, mkStdGen)
+import System.Random (uniform, StdGen)
 import System.Random.Stateful (Uniform(..), uniformRM)
 
 fieldHeight, fieldWidth, fieldSize :: Int
@@ -39,11 +38,11 @@ data GameState = GameState {
   , gsFallingTetra :: !TetraminoGrid
   , gsNextTetra :: !TetraminoGrid
   , gsScore :: !Word
-  , gsLevel :: !Word8
   , gsStdGen :: !StdGen
   , gsFinished :: !Bool
   , gsPlayerName :: !String
   , gsScoreTable :: ![(String, Word)]
+  , gsTotalDelay :: !Float
   } deriving Show
 
 class Index2D c where
@@ -124,20 +123,26 @@ initState g = GameState {
   , gsFallingTetra = stencil cur
   , gsNextTetra = stencil next
   , gsScore = 0
-  , gsLevel = 0
   , gsStdGen = g''
   , gsFinished = False
   , gsPlayerName = ""
   , gsScoreTable = []
+  , gsTotalDelay = 0
   }
   where
   (cur, g') = uniform g
   (next, g'') = uniform g'
 
-gameStep :: GameState -> GameState
-gameStep curState@GameState{..}
+gameStep :: Float -> GameState -> GameState
+gameStep delay curState@GameState{..}
   | gsFinished
   = curState
+  | gsTotalDelay < min 1 (1000 / fromIntegral gsScore)
+  = curState{gsTotalDelay=gsTotalDelay+delay}
+gameStep _ gs = (realGameStep gs){gsTotalDelay=0}
+
+realGameStep :: GameState -> GameState
+realGameStep curState@GameState{..}
   | isJust firstLine
   = curState{
       gsField = Field . removeLine . unField $ gsField
@@ -210,3 +215,8 @@ backspaceName gs@GameState{..} = gs{gsPlayerName=drop 1 gsPlayerName}
 
 stopGame :: GameState -> GameState
 stopGame gs = gs{gsFinished=True}
+
+slamDown :: GameState -> GameState
+slamDown gs@GameState{gsGridPos=GridPos{..}}
+  | gpY == 0 = gs
+  | otherwise = slamDown $ realGameStep gs

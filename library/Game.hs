@@ -1,11 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Game where
 
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Maybe
+import Data.Coerce
 import System.Random (uniform, uniformR, StdGen)
 import System.Random.Stateful (Uniform(..), uniformRM)
 
@@ -47,27 +49,21 @@ data GameState = GameState {
   } deriving Show
 
 class Index2D c where
-  (!) :: c a -> (Int, Int) -> a
-  row :: c a -> Int -> Vector a
+  (!) :: (Coercible (Vector a) (c a)) => c a -> (Int, Int) -> a
+  row :: (Coercible (Vector a) (c a)) => c a -> Int -> Vector a
   width :: c a -> Int
-  vec :: c a -> Vector a
-  con :: Vector a -> c a
-  mapWithIndex :: ((Int, Int) -> a -> b) -> c a -> c b
+  mapWithIndex :: (Coercible (Vector a) (c a), Coercible (Vector b) (c b))
+               => ((Int, Int) -> a -> b) -> c a -> c b
   --
-  (!) g (i, j) = vec g V.! (i*width g + j)
-  row g n = V.slice (n*width g) (width g) $ vec g
-  mapWithIndex f g = con $ V.imap (\i -> f (quotRem i (width g))) (vec g)
+  (!) g (i, j) = coerce g V.! (i*width g + j)
+  row g n = V.slice (n*width g) (width g) $ coerce g
+  mapWithIndex f g = app (V.imap (\i -> f (quotRem i (width g)))) g
 
 instance Index2D FieldG where
   width _ = fieldWidth
-  vec = unField
-  con = Field
 
 instance Index2D TetrominoGridG where
   width _ = tetWidth
-  vec = unTet
-  con = TetrominoGrid
-
 
 stencil :: Tetromino -> TetrominoGrid
 stencil t = TetrominoGrid . V.fromList $ go t
@@ -142,27 +138,38 @@ gameStep :: Float -> GameState -> GameState
 gameStep delay curState@GameState{..}
   | gsFinished
   = curState
-  | gsTotalDelay < min 1 (1000 / fromIntegral gsScore)
+  | gsTotalDelay >= 0.2, isJust firstLine
+  = curState{
+      gsField = app removeLine gsField
+    , gsScore = gsScore + 100
+    , gsTotalDelay = 0
+    }
+  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetro
+  = curState{gsFinished = True}
+  | gsTotalDelay >= min 1 (1000 / fromIntegral gsScore)
+  = (realGameStep curState){gsTotalDelay=0}
+  | otherwise
   = curState{gsTotalDelay=gsTotalDelay+delay}
-gameStep _ gs = (realGameStep gs){gsTotalDelay=0}
+  where
+  firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
+                                         , all isJust $ row gsField r
+                                         ]
+  removeLine :: Vector (Maybe Tetromino) -> Vector (Maybe Tetromino)
+  removeLine g
+    | Just ix <- firstLine
+    = V.concat [V.replicate fieldWidth Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
+    | otherwise = g
 
 realGameStep :: GameState -> GameState
 realGameStep curState@GameState{..}
-  | isJust firstLine
-  = curState{
-      gsField = Field . removeLine . unField $ gsField
-    , gsScore = gsScore + 100
-    }
   | canPlace (0, 1) curState gsFallingTetro
   = curState{gsGridPos = gsGridPos{gpY = gpY gsGridPos + 1 }}
-  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetro
-  = curState{gsFinished = True}
   | otherwise
   = curState{
       gsGridPos = GridPos 3 startRow
     , gsNextTetro = nextTetro
     , gsFallingTetro = gsNextTetro
-    , gsField = Field $ unField gsField V.// placeTet
+    , gsField = app (V.// placeTet) gsField
     , gsStdGen = nextStdGen
     }
   where
@@ -174,13 +181,6 @@ realGameStep curState@GameState{..}
     , let j = max 0 (gpY gsGridPos) + l
     , isJust $ gsFallingTetro ! (l, k)
     ]
-  firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
-                                         , all isJust $ row gsField r
-                                         ]
-  removeLine g
-    | Just ix <- firstLine
-    = V.concat [V.replicate fieldWidth Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
-    | otherwise = g
 
 moveLeft, moveRight, rotate :: GameState -> GameState
 moveLeft curState@GameState{gsGridPos=gp@GridPos{..}, ..}
@@ -223,6 +223,10 @@ stopGame :: GameState -> GameState
 stopGame gs = gs{gsFinished=True}
 
 slamDown :: GameState -> GameState
-slamDown gs@GameState{gsGridPos=GridPos{..}}
-  | gpY == startRow = gs
-  | otherwise = slamDown $ realGameStep gs
+slamDown gs@GameState{gsGridPos=gsGridPos@GridPos{..}, ..}
+  | canPlace (0, 1) gs gsFallingTetro
+  = slamDown gs{gsGridPos = gsGridPos{gpY = gpY + 1 }}
+  | otherwise = gs{gsTotalDelay=0}
+
+app :: (Coercible a b, Coercible c d) => (a -> c) -> b -> d
+app f = coerce . f . coerce

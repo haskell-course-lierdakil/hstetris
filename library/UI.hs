@@ -28,7 +28,7 @@ ui = do
     score <- loadScore
     playIO d white 60 (initState stdGen){gsScoreTable=score} (pure . draw) control (\x -> pure . advance x)
   where
-  d = InWindow "Tetris" (800, 600) (0, 0)
+  d = FullScreen --InWindow "Tetris" (800, 600) (0, 0)
   advance = gameStep
   draw GameState{..}
     | gsFinished
@@ -39,12 +39,12 @@ ui = do
     = rectangleWire 250 500
     <> drawField gsField
     <> drawFalling gsGridPos gsFallingTetro
-    <> (translate (-250*1.5) 200 . scale 0.2 0.2 $ drawTopScore gsScoreTable)
+    <> (translate (-250*1.5) 190 . scale 0.15 0.15 $ drawTopScore gsScoreTable)
     <> (translate (-250*1.5) 250 . scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
     <> drawFalling (GridPos 14 1) gsNextTetro
     <> translate 280 175 (translate -10 80 (scale 0.2 0.2 (text "Next")) <> rectangleWire 150 150)
   drawField field = fold $ mapWithIndex (go 0 0) field
-  drawTopScore = foldMap (uncurry formatScoreLine) . zip [0..] . take 10
+  drawTopScore = foldMap (uncurry formatScoreLine) . zip [0..]
   formatScoreLine n (name, score) = translate 0 (-250*n) $ text [I.i|#{name}: #{score}|]
   go shiftX shiftY (i, j) val
     | (j+shiftX) < 0 || (i+shiftY) < 0 = blank
@@ -98,7 +98,7 @@ saveScore :: GameState -> IO [(String, Word)]
 saveScore w = do
   scorefile <- getScoreFile
   createDirectoryIfMissing True $ takeDirectory scorefile
-  let score = sortOn (Ord.Down . snd) ((reverse $ gsPlayerName w, gsScore w) : gsScoreTable w)
+  let score = take 10 $ sortOn (Ord.Down . snd) ((reverse $ gsPlayerName w, gsScore w) : gsScoreTable w)
   BS.writeFile scorefile $ encode score
   return score
 

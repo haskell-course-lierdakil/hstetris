@@ -47,6 +47,7 @@ ui = do
   drawTopScore = foldMap (uncurry formatScoreLine) . zip [0..] . take 10
   formatScoreLine n (name, score) = translate 0 (-250*n) $ text [I.i|#{name}: #{score}|]
   go shiftX shiftY (i, j) val
+    | (j+shiftX) < 0 || (i+shiftY) < 0 = blank
     | Just tet <- val =
       let top = -250
           left = -250/2

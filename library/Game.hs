@@ -118,7 +118,7 @@ stencil t = TetraminoGrid . V.fromList $ go t
 
 initState :: StdGen -> GameState
 initState g = GameState {
-    gsGridPos = GridPos 3 0
+    gsGridPos = GridPos 3 (-4)
   , gsField = Field $ V.replicate fieldSize Nothing
   , gsFallingTetra = stencil cur
   , gsNextTetra = stencil next
@@ -154,7 +154,7 @@ realGameStep curState@GameState{..}
   = curState{gsFinished = True}
   | otherwise
   = curState{
-      gsGridPos = GridPos 3 0
+      gsGridPos = GridPos 3 (-4)
     , gsNextTetra = nextTetra
     , gsFallingTetra = gsNextTetra
     , gsField = Field $ unField gsField V.// placeTet
@@ -167,7 +167,7 @@ realGameStep curState@GameState{..}
     | k <- [0..3]
     , let i = gpX gsGridPos + k
     , l <- [0..3]
-    , let j = gpY gsGridPos + l
+    , let j = max 0 (gpY gsGridPos) + l
     , isJust $ gsFallingTetra ! (l, k)
     ]
   firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
@@ -203,7 +203,7 @@ canPlace (dx, dy) GameState{..} tet = and
   | k <- [0..3]
   , let i = gpX gsGridPos + k + dx
   , l <- [0..3]
-  , let j = gpY gsGridPos + l + dy
+  , let j = max 0 (gpY gsGridPos) + l + dy
   , isJust $ tet ! (l, k)
   ]
 
@@ -218,5 +218,5 @@ stopGame gs = gs{gsFinished=True}
 
 slamDown :: GameState -> GameState
 slamDown gs@GameState{gsGridPos=GridPos{..}}
-  | gpY == 0 = gs
+  | gpY == -4 = gs
   | otherwise = slamDown $ realGameStep gs

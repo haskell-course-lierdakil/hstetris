@@ -23,6 +23,10 @@ ghc-options: -Wall
 library:
   dependencies:
   - base
+  - gloss
+  - vector
+  - random
+  - string-interpolate
   source-dirs: library
 
 executables:

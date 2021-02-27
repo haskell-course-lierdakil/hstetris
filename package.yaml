@@ -26,6 +26,10 @@ library:
   - gloss
   - vector
   - random
+  - filepath
+  - directory
+  - binary
+  - bytestring
   - string-interpolate
   source-dirs: library
 

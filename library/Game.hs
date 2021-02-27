@@ -41,6 +41,9 @@ data GameState = GameState {
   , gsScore :: !Word
   , gsLevel :: !Word8
   , gsStdGen :: !StdGen
+  , gsFinished :: !Bool
+  , gsPlayerName :: !String
+  , gsScoreTable :: ![(String, Word)]
   } deriving Show
 
 class Index2D c where
@@ -114,8 +117,8 @@ stencil t = TetraminoGrid . V.fromList $ go t
     , o, w, o, o
     ]
 
-initState :: GameState
-initState = GameState {
+initState :: StdGen -> GameState
+initState g = GameState {
     gsGridPos = GridPos 3 0
   , gsField = Field $ V.replicate fieldSize Nothing
   , gsFallingTetra = stencil cur
@@ -123,14 +126,18 @@ initState = GameState {
   , gsScore = 0
   , gsLevel = 0
   , gsStdGen = g''
+  , gsFinished = False
+  , gsPlayerName = ""
+  , gsScoreTable = []
   }
   where
-  g = mkStdGen 42
   (cur, g') = uniform g
   (next, g'') = uniform g'
 
 gameStep :: GameState -> GameState
 gameStep curState@GameState{..}
+  | gsFinished
+  = curState
   | isJust firstLine
   = curState{
       gsField = Field . removeLine . unField $ gsField
@@ -139,7 +146,7 @@ gameStep curState@GameState{..}
   | canPlace (0, 1) curState gsFallingTetra
   = curState{gsGridPos = gsGridPos{gpY = gpY gsGridPos + 1 }}
   | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetra
-  = curState
+  = curState{gsFinished = True}
   | otherwise
   = curState{
       gsGridPos = GridPos 3 0
@@ -194,3 +201,12 @@ canPlace (dx, dy) GameState{..} tet = and
   , let j = gpY gsGridPos + l + dy
   , isJust $ tet ! (l, k)
   ]
+
+appendName :: Char -> GameState -> GameState
+appendName c gs@GameState{..} = gs{gsPlayerName=c:gsPlayerName}
+
+backspaceName :: GameState -> GameState
+backspaceName gs@GameState{..} = gs{gsPlayerName=drop 1 gsPlayerName}
+
+stopGame :: GameState -> GameState
+stopGame gs = gs{gsFinished=True}

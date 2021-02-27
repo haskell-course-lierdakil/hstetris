@@ -9,24 +9,43 @@ module UI where
 import Graphics.Gloss
 import Game
 import Data.Foldable hiding (toList)
-import Debug.Trace
-import Graphics.Gloss.Interface.IO.Interact
+import Data.Binary
+import Data.List
+import Data.Char
+import System.Random
+import System.Exit
+import qualified Data.Ord as Ord
+import Control.Exception
+import qualified Data.ByteString.Lazy as BS
+import System.FilePath
+import System.Directory
+import Graphics.Gloss.Interface.IO.Game
 import qualified Data.String.Interpolate as I
 
 ui :: IO ()
-ui = play d white 5 initState draw control advance
+ui = do
+    stdGen <- newStdGen
+    score <- loadScore
+    playIO d white 5 (initState stdGen){gsScoreTable=score} (pure . draw) control (\x -> pure . advance x)
   where
   d = InWindow "Tetris" (800, 600) (0, 0)
-  advance _ = tr . gameStep
+  advance _ = gameStep
   draw GameState{..}
+    | gsFinished
+    = translate -200 100 (scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
+    <> translate -200 0 (scale 0.2 0.2 $ text "Enter name:")
+    <> translate -200 -100 (scale 0.2 0.2 . text $ reverse gsPlayerName)
+    | otherwise
     = rectangleWire 250 500
     <> drawField gsField
     <> drawFalling gsGridPos gsFallingTetra
+    <> (translate (-250*1.5) 200 . scale 0.2 0.2 $ drawTopScore gsScoreTable)
     <> (translate (-250*1.5) 250 . scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
     <> drawFalling (GridPos 14 1) gsNextTetra
     <> translate 280 175 (translate -10 80 (scale 0.2 0.2 (text "Next")) <> rectangleWire 150 150)
   drawField field = fold $ mapWithIndex (go 0 0) field
-  tr x = trace (show x) x
+  drawTopScore = foldMap (uncurry formatScoreLine) . zip [0..] . take 10
+  formatScoreLine n (name, score) = translate 0 (-250*n) $ text [I.i|#{name}: #{score}|]
   go shiftX shiftY (i, j) val
     | Just tet <- val =
       let top = -250
@@ -38,12 +57,28 @@ ui = play d white 5 initState draw control advance
         ]
     | otherwise = blank
   drawFalling GridPos{..} tetra = fold $ mapWithIndex (go gpX gpY) tetra
-  control (EventKey (SpecialKey KeyLeft) Down _ _) = moveLeft
-  control (EventKey (SpecialKey KeyRight) Down _ _) = moveRight
-  control (EventKey (SpecialKey KeyUp) Down _ _) = Game.rotate
-  control _ = id
-  -- 500 = 20; 250 = 10
-  -- top-left field is (675,50)
+  control (EventKey k Down _ _) w
+    | gsFinished w
+    = case k of
+        SpecialKey KeyEnter -> const $ do
+          newScore <- saveScore w
+          stdGen <- newStdGen
+          pure (initState stdGen){gsScoreTable = newScore}
+        SpecialKey KeyBackspace -> pure . backspaceName
+        SpecialKey KeyDelete -> pure . backspaceName
+        SpecialKey KeyEsc -> const exitSuccess
+        Char '\b' -> pure . backspaceName
+        Char c | isPrint c -> pure . appendName c
+        _ -> pure
+      $ w
+  control (EventKey k Down _ _) w = pure $ case k of
+      SpecialKey KeyLeft   -> moveLeft
+      SpecialKey KeyRight  -> moveRight
+      SpecialKey KeyUp     -> Game.rotate
+      SpecialKey KeyEsc    -> stopGame
+      _ -> id
+    $ w
+  control _ w = pure w
 
 tetColor :: Tetramino -> Color
 tetColor I = black
@@ -53,3 +88,23 @@ tetColor L = magenta
 tetColor T = azure
 tetColor S = orange
 tetColor Z = cyan
+
+getScoreFile :: IO FilePath
+getScoreFile = (</> ".config" </> "tetris" </> "score.dat") <$> getHomeDirectory
+
+saveScore :: GameState -> IO [(String, Word)]
+saveScore w = do
+  scorefile <- getScoreFile
+  createDirectoryIfMissing True $ takeDirectory scorefile
+  let score = sortOn (Ord.Down . snd) ((reverse $ gsPlayerName w, gsScore w) : gsScoreTable w)
+  BS.writeFile scorefile $ encode score
+  return score
+
+loadScore :: IO [(String, Word)]
+loadScore = do
+  scorefile <- getScoreFile
+  f <- BS.readFile scorefile
+  case decodeOrFail f of
+    Left _ -> return []
+    Right (_, _, result) -> return result
+  `catch` (\e -> print (e :: SomeException) >> return [])

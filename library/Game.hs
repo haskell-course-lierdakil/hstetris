@@ -9,10 +9,11 @@ import Data.Maybe
 import System.Random (uniform, uniformR, StdGen)
 import System.Random.Stateful (Uniform(..), uniformRM)
 
-fieldHeight, fieldWidth, fieldSize :: Int
+fieldHeight, fieldWidth, fieldSize, startRow :: Int
 fieldHeight = 20
 fieldWidth = 10
 fieldSize = fieldHeight*fieldWidth
+startRow = -2
 
 tetHeight, tetWidth, tetSize :: Int
 tetHeight = 4
@@ -123,7 +124,7 @@ nextStencil g =
 
 initState :: StdGen -> GameState
 initState g = GameState {
-    gsGridPos = GridPos 3 (-4)
+    gsGridPos = GridPos 3 startRow
   , gsField = Field $ V.replicate fieldSize Nothing
   , gsFallingTetra = cur
   , gsNextTetra = next
@@ -158,7 +159,7 @@ realGameStep curState@GameState{..}
   = curState{gsFinished = True}
   | otherwise
   = curState{
-      gsGridPos = GridPos 3 (-4)
+      gsGridPos = GridPos 3 startRow
     , gsNextTetra = nextTetra
     , gsFallingTetra = gsNextTetra
     , gsField = Field $ unField gsField V.// placeTet
@@ -223,5 +224,5 @@ stopGame gs = gs{gsFinished=True}
 
 slamDown :: GameState -> GameState
 slamDown gs@GameState{gsGridPos=GridPos{..}}
-  | gpY == -4 = gs
+  | gpY == startRow = gs
   | otherwise = slamDown $ realGameStep gs

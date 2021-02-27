@@ -25,7 +25,7 @@ ui = play d white 5 initState draw control advance
     <> (translate (-250*1.5) 250 . scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
     <> drawFalling (GridPos 14 1) gsNextTetra
     <> translate 280 175 (translate -10 80 (scale 0.2 0.2 (text "Next")) <> rectangleWire 150 150)
-  drawField field = fold $ mapFieldWithIndex (go 0 0) field
+  drawField field = fold $ mapWithIndex (go 0 0) field
   tr x = trace (show x) x
   go shiftX shiftY (i, j) val
     | Just tet <- val =
@@ -37,7 +37,7 @@ ui = play d white 5 initState draw control advance
         c2c i j, c2c i (j+1), c2c (i+1) (j+1), c2c (i+1) j
         ]
     | otherwise = blank
-  drawFalling GridPos{..} tetra = fold $ mapTetWithIndex (go gpX gpY) tetra
+  drawFalling GridPos{..} tetra = fold $ mapWithIndex (go gpX gpY) tetra
   control (EventKey (SpecialKey KeyLeft) Down _ _) = moveLeft
   control (EventKey (SpecialKey KeyRight) Down _ _) = moveRight
   control (EventKey (SpecialKey KeyUp) Down _ _) = Game.rotate

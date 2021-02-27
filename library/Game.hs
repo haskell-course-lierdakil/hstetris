@@ -1,15 +1,14 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveTraversable #-}
 module Game where
 
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
 import Data.Maybe
-import Data.List
 import System.Random (uniform, StdGen, mkStdGen)
 import System.Random.Stateful (Uniform(..), uniformRM)
-import GHC.Exts (toList)
 
 fieldHeight, fieldWidth, fieldSize :: Int
 fieldHeight = 20
@@ -27,9 +26,12 @@ instance Uniform Tetramino where
   -- uniformM :: StatefulGen g m => g -> m aSource
   uniformM g = toEnum <$> uniformRM (fromEnum (minBound :: Tetramino), fromEnum (maxBound :: Tetramino)) g
 
-type Field = Vector (Maybe Tetramino)
-type TetraminoStencil = Vector Bool
-type TetraminoGrid = Vector (Maybe Tetramino)
+newtype FieldG a = Field { unField :: Vector a }
+  deriving (Show, Functor, Applicative, Monad, Traversable, Foldable)
+type Field = FieldG (Maybe Tetramino)
+newtype TetraminoGridG a = TetraminoGrid { unTet :: Vector a }
+  deriving (Show, Functor, Applicative, Monad, Traversable, Foldable)
+type TetraminoGrid = TetraminoGridG (Maybe Tetramino)
 data GridPos = GridPos { gpX :: Int, gpY :: Int } deriving (Show)
 data GameState = GameState {
     gsGridPos :: !GridPos
@@ -41,11 +43,34 @@ data GameState = GameState {
   , gsStdGen :: !StdGen
   } deriving Show
 
+class Index2D c where
+  (!) :: c a -> (Int, Int) -> a
+  row :: c a -> Int -> Vector a
+  width :: c a -> Int
+  vec :: c a -> Vector a
+  con :: Vector a -> c a
+  mapWithIndex :: ((Int, Int) -> a -> b) -> c a -> c b
+  --
+  (!) g (i, j) = vec g V.! (i*width g + j)
+  row g n = V.slice (n*width g) (width g) $ vec g
+  mapWithIndex f g = con $ V.imap (\i -> f (quotRem i (width g))) (vec g)
+
+instance Index2D FieldG where
+  width _ = fieldWidth
+  vec = unField
+  con = Field
+
+instance Index2D TetraminoGridG where
+  width _ = tetWidth
+  vec = unTet
+  con = TetraminoGrid
+
+
 stencil :: Tetramino -> TetraminoGrid
-stencil t = fillStencil t . V.fromList $ go t
+stencil t = TetraminoGrid . V.fromList $ go t
   where
-  o = False
-  w = True
+  o = Nothing
+  w = Just t
   go I = [
       o, o, w, o
     , o, o, w, o
@@ -89,14 +114,10 @@ stencil t = fillStencil t . V.fromList $ go t
     , o, w, o, o
     ]
 
-  fillStencil tet = fmap $ \case
-    True -> Just tet
-    False -> Nothing
-
 initState :: GameState
 initState = GameState {
     gsGridPos = GridPos 3 0
-  , gsField = V.replicate fieldSize Nothing
+  , gsField = Field $ V.replicate fieldSize Nothing
   , gsFallingTetra = stencil cur
   , gsNextTetra = stencil next
   , gsScore = 0
@@ -112,7 +133,7 @@ gameStep :: GameState -> GameState
 gameStep curState@GameState{..}
   | isJust firstLine
   = curState{
-      gsField = removeLine gsField
+      gsField = Field . removeLine . unField $ gsField
     , gsScore = gsScore + 100
     }
   | canPlace (0, 1) curState gsFallingTetra
@@ -124,27 +145,25 @@ gameStep curState@GameState{..}
       gsGridPos = GridPos 3 0
     , gsNextTetra = nextTetra
     , gsFallingTetra = gsNextTetra
-    , gsField = gsField V.// placeTet
+    , gsField = Field $ unField gsField V.// placeTet
     , gsStdGen = nextStdGen
     }
   where
   (tetra, nextStdGen) = uniform gsStdGen
   nextTetra = stencil tetra
-  placeTet = [(j*fieldWidth + i, gsFallingTetra V.! tetIdx)
+  placeTet = [(j*fieldWidth + i, gsFallingTetra ! (l, k))
     | k <- [0..3]
     , let i = gpX gsGridPos + k
     , l <- [0..3]
     , let j = gpY gsGridPos + l
-          tetIdx = tetWidth * l + k
-    , isJust $ gsFallingTetra V.! tetIdx
+    , isJust $ gsFallingTetra ! (l, k)
     ]
-  firstLine = listToMaybe [ ix | row <- [0..fieldHeight-1]
-                               , let ix = row*fieldWidth
-                               , all isJust $ V.slice ix fieldWidth gsField
-                               ]
+  firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
+                                         , all isJust $ row gsField r
+                                         ]
   removeLine g
     | Just ix <- firstLine
-    = V.concat [V.replicate 10 Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
+    = V.concat [V.replicate fieldWidth Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
     | otherwise = g
 
 moveLeft, moveRight, rotate :: GameState -> GameState
@@ -162,20 +181,16 @@ rotate curState@GameState{gsFallingTetra=tet}
   = curState{gsFallingTetra=rot}
   | otherwise = curState
   where
-  rot = V.generate tetSize $ \ix ->
+  rot = TetraminoGrid $ V.generate tetSize $ \ix ->
          let (i,j) = quotRem ix tetWidth
-         in tet V.! ((tetHeight-1-j)*tetWidth + i)
+         in unTet tet V.! ((tetHeight-1-j)*tetWidth + i)
 
 canPlace :: (Int, Int) -> GameState -> TetraminoGrid -> Bool
 canPlace (dx, dy) GameState{..} tet = and
-  [ j >= 0 && j < 20 && i >= 0 && i < 10 && isNothing (gsField V.! (j*fieldWidth + i))
+  [ j >= 0 && j < 20 && i >= 0 && i < 10 && isNothing (gsField ! (j, i))
   | k <- [0..3]
   , let i = gpX gsGridPos + k + dx
   , l <- [0..3]
   , let j = gpY gsGridPos + l + dy
-  , isJust $ tet V.! (tetWidth * l + k)
+  , isJust $ tet ! (l, k)
   ]
-
-mapWithIndex width f = V.imap (\i -> f (quotRem i width))
-mapFieldWithIndex = mapWithIndex fieldWidth
-mapTetWithIndex = mapWithIndex tetWidth

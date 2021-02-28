@@ -25,7 +25,6 @@ tetSize = tetHeight*tetWidth
 data Tetromino = I | O | J | L | T | S | Z deriving (Show, Enum, Bounded, Eq)
 
 instance Uniform Tetromino where
-  -- uniformM :: StatefulGen g m => g -> m aSource
   uniformM g = toEnum <$> uniformRM (fromEnum (minBound :: Tetromino), fromEnum (maxBound :: Tetromino)) g
 
 newtype FieldG a = Field { unField :: Vector a }

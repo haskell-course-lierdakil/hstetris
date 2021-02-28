@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d695b8a22535766917964831bb998c3947a5428cfc0e366cd09d9023025dfe88
+-- hash: c2634bc1333f82d37ee594c0f8af7e5637dccc63e3e5a4b77c100fdf9e0eae34
 
 name:           tetris
 version:        0.0.0
@@ -35,13 +35,18 @@ library
       library
   ghc-options: -Wall
   build-depends:
-      base
+      async
+    , base
     , binary
     , bytestring
+    , containers
     , directory
     , filepath
     , gloss
     , random
+    , req
+    , retry
+    , stm
     , string-interpolate
     , vector
   default-language: Haskell2010

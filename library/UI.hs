@@ -4,6 +4,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE NegativeLiterals #-}
+{-# LANGUAGE OverloadedStrings #-}
 module UI where
 
 import Graphics.Gloss
@@ -17,19 +18,53 @@ import System.Exit
 import qualified Data.Ord as Ord
 import Control.Exception
 import qualified Data.ByteString.Lazy as BS
+import qualified Data.Map as M
+import Network.HTTP.Req
+import Control.Retry
 import System.FilePath
 import System.Directory
 import Graphics.Gloss.Interface.IO.Game
 import qualified Data.String.Interpolate as I
+import Control.Concurrent.Async
+
+data ExtendedState = ExtendedState { esWorld :: !GameState, esGotOnlineScore :: !Bool }
+
+myHttpConfig :: HttpConfig
+myHttpConfig = defaultHttpConfig {
+    httpConfigRetryPolicy = retryPolicy $ const Nothing
+  }
+
+getOnlineScore :: IO [(String, Word)]
+getOnlineScore = fmap (M.toList . responseBody) . runReq myHttpConfig $ req GET
+  (https "hstetris.livid.pp.ru" /: "score")
+  NoReqBody
+  jsonResponse -- specify how to interpret response
+  mempty
 
 ui :: IO ()
 ui = do
     stdGen <- newStdGen
     score <- loadScore
-    playIO d white 60 (initState stdGen){gsScoreTable=score} (pure . draw) control (\x -> pure . advance x)
+    let gameState = (initState stdGen){gsScoreTable=score}
+        state = ExtendedState { esWorld = gameState, esGotOnlineScore = False }
+    withAsync getOnlineScore $ \scoreAsync ->
+      playIO d white 60 state
+        (pure . draw . esWorld)
+        control
+        (advance scoreAsync)
   where
   d = FullScreen --InWindow "Tetris" (800, 600) (0, 0)
-  advance = gameStep
+  advance scoreAsync delay state@ExtendedState{..}
+    | esGotOnlineScore
+    = pure state{esWorld=gameStep delay esWorld}
+    | otherwise
+    = do asyncScore <- poll scoreAsync
+         case asyncScore of
+           Just (Right sc) -> do
+             newScore <- saveScore' (gsScoreTable esWorld <> sc)
+             pure state{ esWorld=(gameStep delay esWorld){gsScoreTable=newScore}
+                       , esGotOnlineScore=True}
+           _ -> pure state{esWorld=gameStep delay esWorld}
   draw GameState{..}
     | gsGamePhase == Finished
     = translate -200 100 (scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
@@ -59,10 +94,10 @@ ui = do
     | otherwise = blank
   drawFalling GridPos{..} = fold . mapWithIndex (go gpX gpY)
   control (EventKey k Down _ _) w
-    | gsGamePhase w == Finished
-    = case k of
+    | (gsGamePhase . esWorld) w == Finished
+    = modifyWorld w $ case k of
         SpecialKey KeyEnter -> const $ do
-          newScore <- saveScore w
+          newScore <- saveScore (esWorld w)
           stdGen <- newStdGen
           pure (initState stdGen){gsScoreTable = newScore}
         SpecialKey KeyBackspace -> pure . backspaceName
@@ -71,16 +106,16 @@ ui = do
         Char '\b' -> pure . backspaceName
         Char c | isPrint c -> pure . appendName c
         _ -> pure
-      $ w
-  control (EventKey k Down _ _) w = pure $ case k of
+  control (EventKey k Down _ _) w = modifyWorld w $ pure . case k of
       SpecialKey KeyLeft   -> moveLeft
       SpecialKey KeyRight  -> moveRight
       SpecialKey KeyDown   -> slamDown
       SpecialKey KeyUp     -> Game.rotate
       SpecialKey KeyEsc    -> stopGame
       _ -> id
-    $ w
   control _ w = pure w
+  modifyWorld :: Monad m => ExtendedState -> (GameState -> m GameState) -> m ExtendedState
+  modifyWorld es@ExtendedState{..} f = f esWorld >>= \newWorld -> pure es{esWorld=newWorld}
 
 tetColor :: Tetromino -> Color
 tetColor I = black
@@ -94,11 +129,25 @@ tetColor Z = cyan
 getScoreFile :: IO FilePath
 getScoreFile = (</> ".config" </> "tetris" </> "score.dat") <$> getHomeDirectory
 
+postOnlineScore :: [(String, Word)] ->  IO ()
+postOnlineScore score = do
+  _ <- runReq myHttpConfig (req POST
+    (http "localhost" /: "score")
+    (ReqBodyJson score)
+    lbsResponse
+    (port 3000))
+    `catch` (\e -> print (e :: HttpException) >> return undefined)
+  return ()
+
 saveScore :: GameState -> IO [(String, Word)]
-saveScore w = do
+saveScore w = saveScore' ((reverse $ gsPlayerName w, gsScore w) : gsScoreTable w)
+
+saveScore' :: [(String, Word)] -> IO [(String, Word)]
+saveScore' w = do
   scorefile <- getScoreFile
   createDirectoryIfMissing True $ takeDirectory scorefile
-  let score = take 10 $ sortOn (Ord.Down . snd) ((reverse $ gsPlayerName w, gsScore w) : gsScoreTable w)
+  let score = take 10 $ nub $ sortOn (Ord.Down . snd) w
+  _ <- async $ postOnlineScore score
   BS.writeFile scorefile $ encode score
   return score
 

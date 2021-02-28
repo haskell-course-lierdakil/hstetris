@@ -57,9 +57,7 @@ jobs:
     - shell: bash
       run: |
         ls -l .cabal-store/ghc-${{matrix.ghc}}/ || true
-        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
-        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
-        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
+        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/tetris-* || true
     - name: Install dependencies
       run: cabal v2-build --only-dependencies
     - name: Install
@@ -83,9 +81,9 @@ jobs:
     - name: Repack assets
       run: |
         mkdir assets
-        tar cvJf assets/hstetris-macOS.tar.xz -C build-macOS tetris-server
-        tar cvJf assets/hstetris-Linux.tar.xz -C build-Linux tetris-server
-        7z a assets/hstetris-Windows.7z build-Windows/tetris-server.exe
+        tar cvJf assets/hstetris-macOS.tar.xz -C build-macOS tetris
+        tar cvJf assets/hstetris-Linux.tar.xz -C build-Linux tetris
+        7z a assets/hstetris-Windows.7z build-Windows/tetris.exe
     - uses: actions/upload-artifact@v2
       with:
         name: release-assets

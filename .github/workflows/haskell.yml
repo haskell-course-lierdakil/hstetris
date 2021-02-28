@@ -1,0 +1,68 @@
+name: Haskell CI
+
+on: [push]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ghc: ['8.10.4']
+        include:
+        - os: ubuntu-latest
+          container: 'lierdakil/alpine-haskell:8.10.4-pwsh'
+          config: static-build-cabal-config
+        - os: windows-latest
+          config: dynamic-build-cabal-config
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: haskell/actions/setup@v1
+      if: '!(matrix.container)'
+      with:
+        ghc-version: ${{matrix.ghc}}
+        cabal-version: '3.2'
+    - name: Cabal init
+      shell: pwsh
+      run: |
+        $store = Join-Path $pwd ".cabal-store"
+        New-Item -ItemType Directory -Force "$store"
+        cabal user-config init --force --augment="store-dir: $store" `
+          --augment="install-method: copy"
+        $bindir = Join-Path $store "bin"
+        echo "$bindir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - name: Cabal update
+      run: cabal v2-update
+    - name: Copy build config
+      if: matrix.config
+      run: cp misc/${{ matrix.config }} ./cabal.project.local
+    - name: Cabal configure
+      run: cabal v2-configure
+    - uses: actions/cache@v2
+      id: cache
+      with:
+        path: .cabal-store
+        key: ${{runner.os}}-${{matrix.ghc}}-${{hashFiles('tetris.cabal')}}-${{hashFiles('dist-newstyle/cache/plan.json')}}
+        restore-keys: |
+          ${{runner.os}}-${{matrix.ghc}}-${{hashFiles('tetris.cabal')}}-${{hashFiles('dist-newstyle/cache/plan.json')}}
+          ${{runner.os}}-${{matrix.ghc}}-${{hashFiles('tetris.cabal')}}
+          ${{runner.os}}-${{matrix.ghc}}
+    - shell: bash
+      run: |
+        ls -l .cabal-store/ghc-${{matrix.ghc}}/ || true
+        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
+        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
+        rm -rvf .cabal-store/ghc-${{matrix.ghc}}/alpaca-* || true
+    - name: Install dependencies
+      run: cabal v2-build --only-dependencies
+    - name: Install
+      shell: bash
+      run: |
+        mkdir install
+        export GIT_DIR="$PWD/.git"
+        cabal v2-install --installdir=$PWD/install
+    - uses: actions/upload-artifact@v2
+      with:
+        name: build-${{ runner.os }}
+        path: install

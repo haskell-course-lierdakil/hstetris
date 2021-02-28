@@ -10,9 +10,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         ghc: ['8.10.4']
         include:
-        - os: ubuntu-latest
-          container: 'lierdakil/alpine-haskell:8.10.4-pwsh'
-          config: static-build-cabal-config
         - os: windows-latest
           config: dynamic-build-cabal-config
     runs-on: ${{ matrix.os }}
@@ -28,6 +25,10 @@ jobs:
       shell: bash
       run: |
         apk --no-cache --update add mesa-dev glu-dev
+    - if: startsWith(matrix.os,'ubuntu') && !(matrix.container)
+      shell: bash
+      run: |
+        sudo apt-get install libgl-dev libglu1-mesa-dev
     - name: Cabal init
       shell: pwsh
       run: |

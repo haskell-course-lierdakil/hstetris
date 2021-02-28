@@ -35,6 +35,7 @@ newtype TetrominoGridG a = TetrominoGrid { unTet :: Vector a }
   deriving (Show, Functor, Applicative, Monad, Traversable, Foldable)
 type TetrominoGrid = TetrominoGridG (Maybe Tetromino)
 data GridPos = GridPos { gpX :: Int, gpY :: Int } deriving (Show)
+data GamePhase = Init | Falling | Cleaning | Finished deriving (Eq, Show)
 data GameState = GameState {
     gsGridPos :: !GridPos
   , gsField :: !Field
@@ -42,10 +43,10 @@ data GameState = GameState {
   , gsNextTetro :: !TetrominoGrid
   , gsScore :: !Word
   , gsStdGen :: !StdGen
-  , gsFinished :: !Bool
   , gsPlayerName :: !String
   , gsScoreTable :: ![(String, Word)]
   , gsTotalDelay :: !Float
+  , gsGamePhase :: !GamePhase
   } deriving Show
 
 class Index2D c where
@@ -126,39 +127,59 @@ initState g = GameState {
   , gsNextTetro = next
   , gsScore = 0
   , gsStdGen = g'
-  , gsFinished = False
   , gsPlayerName = ""
   , gsScoreTable = []
   , gsTotalDelay = 0
+  , gsGamePhase = Init
   }
   where
   (next, (cur, g')) = nextStencil <$> nextStencil g
 
-gameStep :: Float -> GameState -> GameState
-gameStep delay curState@GameState{..}
-  | gsFinished
-  = curState
-  | gsTotalDelay >= 0.2, isJust firstLine
-  = curState{
-      gsField = app removeLine gsField
-    , gsScore = gsScore + 100
-    , gsTotalDelay = 0
-    }
-  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 0} gsNextTetro
-  = curState{gsFinished = True}
-  | gsTotalDelay >= min 1 (1000 / fromIntegral gsScore)
-  = (realGameStep curState){gsTotalDelay=0}
+gameStep, doClean, doFall :: Float -> GameState -> GameState
+gameStep delay curState@GameState{..} = case gsGamePhase of
+  Init -> doInit curState
+  Finished -> curState
+  Cleaning -> doClean delay curState
+  Falling -> doFall delay curState
+
+doInit :: GameState -> GameState
+doInit curState@GameState{..}
+  | not $ canPlace (0, 0) curState{gsGridPos=GridPos 3 startRow} gsNextTetro
+  = curState{gsGamePhase = Finished}
   | otherwise
-  = curState{gsTotalDelay=gsTotalDelay+delay}
+  = curState{
+    gsGridPos = GridPos 3 startRow
+  , gsNextTetro = nextTetro
+  , gsFallingTetro = gsNextTetro
+  , gsStdGen = nextStdGen
+  , gsGamePhase = Falling
+  , gsTotalDelay=0
+  }
+  where
+  (nextTetro, nextStdGen) = nextStencil gsStdGen
+
+doClean delay curState@GameState{..}
+  | gsTotalDelay >= 0.2
+  = case firstLine of
+      Just line -> curState{
+          gsField = app (removeLine line) gsField
+        , gsScore = gsScore + 100
+        , gsTotalDelay = 0
+        }
+      Nothing -> curState{gsGamePhase=Init}
+  | otherwise = curState{gsTotalDelay=gsTotalDelay+delay}
   where
   firstLine = listToMaybe [ r*fieldWidth | r <- [0..fieldHeight-1]
                                          , all isJust $ row gsField r
                                          ]
-  removeLine :: Vector (Maybe Tetromino) -> Vector (Maybe Tetromino)
-  removeLine g
-    | Just ix <- firstLine
-    = V.concat [V.replicate fieldWidth Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
-    | otherwise = g
+  removeLine :: Int -> Vector (Maybe Tetromino) -> Vector (Maybe Tetromino)
+  removeLine ix g = V.concat [V.replicate fieldWidth Nothing, V.take ix g, V.drop (ix+fieldWidth) g]
+
+doFall delay curState@GameState{..}
+  | gsTotalDelay >= min 1 (1000 / fromIntegral gsScore)
+  = (realGameStep curState){gsTotalDelay=0}
+  | otherwise
+  = curState{gsTotalDelay=gsTotalDelay+delay}
 
 realGameStep :: GameState -> GameState
 realGameStep curState@GameState{..}
@@ -166,14 +187,10 @@ realGameStep curState@GameState{..}
   = curState{gsGridPos = gsGridPos{gpY = gpY gsGridPos + 1 }}
   | otherwise
   = curState{
-      gsGridPos = GridPos 3 startRow
-    , gsNextTetro = nextTetro
-    , gsFallingTetro = gsNextTetro
-    , gsField = app (V.// placeTet) gsField
-    , gsStdGen = nextStdGen
+      gsField = app (V.// placeTet) gsField
+    , gsGamePhase = Cleaning
     }
   where
-  (nextTetro, nextStdGen) = nextStencil gsStdGen
   placeTet = [(j*fieldWidth + i, gsFallingTetro ! (l, k))
     | k <- [0..3]
     , let i = gpX gsGridPos + k
@@ -220,7 +237,7 @@ backspaceName :: GameState -> GameState
 backspaceName gs@GameState{..} = gs{gsPlayerName=drop 1 gsPlayerName}
 
 stopGame :: GameState -> GameState
-stopGame gs = gs{gsFinished=True}
+stopGame gs = gs{gsGamePhase=Finished}
 
 slamDown :: GameState -> GameState
 slamDown gs@GameState{gsGridPos=gsGridPos@GridPos{..}, ..}

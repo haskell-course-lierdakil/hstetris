@@ -31,14 +31,14 @@ ui = do
   d = FullScreen --InWindow "Tetris" (800, 600) (0, 0)
   advance = gameStep
   draw GameState{..}
-    | gsFinished
+    | gsGamePhase == Finished
     = translate -200 100 (scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
     <> translate -200 0 (scale 0.2 0.2 $ text "Enter name:")
     <> translate -200 -100 (scale 0.2 0.2 . text $ reverse gsPlayerName)
     | otherwise
     = rectangleWire 250 500
     <> drawField gsField
-    <> drawFalling gsGridPos gsFallingTetro
+    <> (if gsGamePhase == Falling then drawFalling gsGridPos gsFallingTetro else mempty)
     <> (translate (-250*1.5) 190 . scale 0.15 0.15 $ drawTopScore gsScoreTable)
     <> (translate (-250*1.5) 250 . scale 0.2 0.2 $ text [I.i|Score: #{gsScore}|])
     <> drawFalling (GridPos 14 1) gsNextTetro
@@ -59,7 +59,7 @@ ui = do
     | otherwise = blank
   drawFalling GridPos{..} = fold . mapWithIndex (go gpX gpY)
   control (EventKey k Down _ _) w
-    | gsFinished w
+    | gsGamePhase w == Finished
     = case k of
         SpecialKey KeyEnter -> const $ do
           newScore <- saveScore w

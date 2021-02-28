@@ -5,6 +5,7 @@ on: [push]
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         ghc: ['8.10.4']
@@ -23,6 +24,10 @@ jobs:
       with:
         ghc-version: ${{matrix.ghc}}
         cabal-version: '3.2'
+    - if: '(matrix.container)'
+      shell: bash
+      run: |
+        apk --no-cache --update add mesa-dev glu-dev
     - name: Cabal init
       shell: pwsh
       run: |

@@ -1,6 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE NegativeLiterals #-}
@@ -34,9 +33,12 @@ myHttpConfig = defaultHttpConfig {
     httpConfigRetryPolicy = retryPolicy $ const Nothing
   }
 
+scoreServer :: Url 'Https
+scoreServer = https "hstetris.livid.pp.ru" /: "score"
+
 getOnlineScore :: IO [(String, Word)]
 getOnlineScore = fmap (M.toList . responseBody) . runReq myHttpConfig $ req GET
-  (https "hstetris.livid.pp.ru" /: "score")
+  scoreServer
   NoReqBody
   jsonResponse -- specify how to interpret response
   mempty
@@ -132,7 +134,7 @@ getScoreFile = (</> ".config" </> "tetris" </> "score.dat") <$> getHomeDirectory
 postOnlineScore :: [(String, Word)] ->  IO ()
 postOnlineScore score = do
   _ <- runReq myHttpConfig (req POST
-    (http "localhost" /: "score")
+    scoreServer
     (ReqBodyJson score)
     lbsResponse
     (port 3000))

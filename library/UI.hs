@@ -137,7 +137,7 @@ postOnlineScore score = do
     scoreServer
     (ReqBodyJson score)
     lbsResponse
-    (port 3000))
+    mempty)
     `catch` (\e -> print (e :: HttpException) >> return undefined)
   return ()
 

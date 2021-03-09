@@ -1,3 +1,8 @@
+## 0.0.1
+
+-   Bump version
+-   Filter characters as ascii
+
 # Change log
 
 tetris uses [Semantic Versioning][].

@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c2634bc1333f82d37ee594c0f8af7e5637dccc63e3e5a4b77c100fdf9e0eae34
+-- hash: db7ada70122c08e1a316f2814cfa6b90dbe5529a662a0d654a725a08514de7d7
 
 name:           tetris
-version:        0.0.0
+version:        0.0.1
 homepage:       https://github.com/lierdakil/tetris#readme
 bug-reports:    https://github.com/lierdakil/tetris/issues
 author:         Author name here

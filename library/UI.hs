@@ -106,7 +106,7 @@ ui = do
         SpecialKey KeyDelete -> pure . backspaceName
         SpecialKey KeyEsc -> const exitSuccess
         Char '\b' -> pure . backspaceName
-        Char c | isPrint c -> pure . appendName c
+        Char c | isAscii c -> pure . appendName c
         _ -> pure
   control (EventKey k Down _ _) w = modifyWorld w $ pure . case k of
       SpecialKey KeyLeft   -> moveLeft
